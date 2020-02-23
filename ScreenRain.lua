@@ -65,17 +65,18 @@ local GameSettings	= UserSettings().GameSettings
 local ignoreList	= {Player.Character or Player.CharacterAdded:Wait()}
 
 --Localizing
+local ipairs	= ipairs
 local instance	= Instance.new
 local rgbColor	= Color3.fromRGB
 local random	= math.random
 local v3, cf	= Vector3.new, CFrame.new
 
---Settings localized
-local defaultColor = rgbColor(226, 244, 255)
+local UpVec		= v3(0,1,0)
 
+--Settings localized
 local Rate = Settings.Rate
 local Size = Settings.Size
-local Tint = Settings.Tint
+local Tint = Settings.Tint or rgbColor(226, 244, 255)
 local Fade = Settings.Fade
 
 --Fade tween
@@ -95,7 +96,7 @@ local ScreenBlock = instance("Part")
 	ScreenBlock.CanCollide		= false
 	ScreenBlock.Parent		= Camera
 
-RunService:BindToRenderStep("ScreenUpdate", Enum.RenderPriority.Camera.Value + 1, function() ScreenBlock.CFrame = Camera.CFrame end)
+RunService:BindToRenderStep("ScreenRainUpdate", Enum.RenderPriority.Camera.Value + 1, function() ScreenBlock.CFrame = Camera.CFrame end)
 
 --Droplet object
 local Dropet_Prefab		= instance("Part")
@@ -103,7 +104,7 @@ local Dropet_Prefab		= instance("Part")
 	Dropet_Prefab.CanCollide	= false
 	Dropet_Prefab.Transparency	= 0.5
 	Dropet_Prefab.Name			= "Droplet_Main"
-	Dropet_Prefab.Color			= Tint or defaultColor
+	Dropet_Prefab.Color			= Tint
 	Dropet_Prefab.Size			= v3(1,1,1)
 	
 	local ObjectMesh	= instance("SpecialMesh")
@@ -126,21 +127,22 @@ local function Weld(a, b)
 	return weld
 end
 
+local function DestroyDroplet(d)
+	wait(Fade)
+	d:Destroy()
+end
+
 --Returns whether the given position is under cover
-local function UnderObject(pos)
-	local ray = Ray.new(pos, v3(0,1,0) * 150)
+local function UnderObject(pos,l)
+	local ray = Ray.new(pos, UpVec * (l or 120))
 	-- raycast
 	local hit, position = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList)
 	if hit then
-		if hit.Transparency == 1 then --It's invisible, thus a hidden non-gameplay part that doesn't count (so we check again above it)
-			return UnderObject(position+v3(0,0.5,0))
-		else return true
-		end
+		return hit.Transparency ~= 1 and true or UnderObject(position+UpVec, (l or 120) - (pos-position).Magnitude)
 	else
 		return false
 	end
 end
-
 --Creates a random droplet on screen
 local function CreateDroplet()
 	--Setup
@@ -184,10 +186,12 @@ local function CreateDroplet()
 	DropletMain.CFrame = ScreenBlock.CFrame:toWorldSpace(cf(random(-100,100)/100, random(-100,100)/100, -1))
 	Weld(DropletMain, ScreenBlock)
 	
-	for i, t in pairs(Tweens) do
+	for _, t in ipairs(Tweens) do
 		t:Play()
 	end
-	delay(Fade+0.1, function() DropletMain:Destroy() end)
+	
+	local DestroyRoutine = coroutine.create(DestroyDroplet)
+	coroutine.resume(DestroyRoutine, DropletMain)
 	
 	DropletMain.Parent = ScreenBlock
 end
