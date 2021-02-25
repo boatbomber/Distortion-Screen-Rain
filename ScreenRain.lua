@@ -78,6 +78,8 @@ local fadeInfo = TweenInfo.new(Fade, Enum.EasingStyle.Sine, Enum.EasingDirection
 local strechInfo = TweenInfo.new(Fade / 1.05, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
 local fadeGoal = {Transparency = 1}
 
+local accumulatedChance = 0
+
 ----------------------------------------------------------------------------
 ---  Prefab Basic Objects  -------------------------------------------------
 ----------------------------------------------------------------------------
@@ -126,7 +128,7 @@ end
 --Returns whether the given position is under cover
 local function UnderObject(pos, l)
 	l = l or 120
-	
+
 	local hit, position = Workspace:FindPartOnRayWithIgnoreList(Ray.new(pos, UpVec * l), ignoreList)
 	if hit then
 		return hit.Transparency ~= 1 and true or UnderObject(position + UpVec, l - (pos - position).Magnitude)
@@ -174,7 +176,7 @@ local function CreateDroplet()
 			math.random(-(Size * 40), Size * 40) / 100,
 			math.random(-(Size * 40), Size * 40) / 100,
 			0
-		))
+			))
 
 		local ExtrusionScale = Size / 1.5 + eSizeOffset
 		local ExtrusionMeshScale = Vector3.new(ExtrusionScale, ExtrusionScale, ExtrusionScale)
@@ -227,7 +229,7 @@ local function CreateDroplet()
 		math.random(-100, 100) / 100,
 		math.random(-100, 100) / 100,
 		-1
-	))
+		))
 
 	DropletMain.CFrame = NewCFrame
 	local weld = Instance.new("Weld")
@@ -254,15 +256,17 @@ GameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(OnGraphicsCha
 ----------------------------------------------------------------------------
 ---  Functionality Loop  ---------------------------------------------------
 ----------------------------------------------------------------------------
-math.randomseed(tick())
-while true do
-	wait(1 / Rate)
-	--Only render droplets if:
-		--Camera isn't looking down
-		--Render settings are high enough
-		--Camera isn't under an awning or roof or something
+
+RunService.Heartbeat:Connect(function(deltaTime)
+	accumulatedChance += deltaTime * Settings.Rate
 
 	if CanShow and ScreenBlockCFrame.LookVector.Y > -0.4 and not UnderObject(ScreenBlockCFrame.Position) then
-		CreateDroplet()
+		for i = 1, math.floor(accumulatedChance) do
+			CreateDroplet()
+		end
+
+		accumulatedChance %= 1
+	else
+		accumulatedChance %= 1
 	end
-end
+end)
