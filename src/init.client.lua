@@ -1,9 +1,9 @@
 --[=[
 
-	--Copyright boatbomber 2019--
+	--Copyright boatbomber 2022--
 
-	--Given under a BSD 3-Clause License--
-		Explanation of license:		https://tldrlegal.com/license/bsd-3-clause-license-(revised)
+	--Given under a MPL 2.0 License--
+		Explanation of license: https://tldrlegal.com/license/mozilla-public-license-2.0-(mpl-2)
 
 	--FEATURES--
 
@@ -27,111 +27,149 @@
 	--WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING--
 --]=]
 
--- Constants
-local Settings = {
-	--	Rate: How many droplets spawn per second
-	Rate = 8,
+-- Feel free to modify these settings
 
-	--	Size: How large the droplets roughly are (in studs)
+local Settings = {
+	-- How many droplets spawn per second
+	Rate = 5,
+
+	-- How large the droplets roughly are (in studs)
 	Size = 0.1,
 
-	--	Tint: What color the droplets are tinted (leave as nil for a default realistic light blue)
+	-- What color the droplets are tinted (leave as nil for a default realistic light blue)
 	Tint = Color3.fromRGB(226, 244, 255),
 
-	--	Fade: How long it takes for a droplet to fade
+	-- How long it takes for a droplet to fade
 	Fade = 1.5,
+
+	-- Update frequency
+	UpdateFreq = 1 / 45,
 }
 
-local Workspace = game:GetService("Workspace")
+-------------------------------------------------------------------------------------------------------
+-- Modifications beyond this point may alter/break functionality if you don't know what you're doing --
+-------------------------------------------------------------------------------------------------------
+
+-- Services
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local TweenService = game:GetService("TweenService")
 
-local UpVec = Vector3.new(0, 1, 0)
-local DROPLET_SIZE = Vector3.new(1, 1, 1)
-local EMPTY_CFRAME = CFrame.new()
+-- Modules
+local ObjectPool = require(script.ObjectPool)
 
-----------------------------------------------------------------------------
----  Variables  ------------------------------------------------------------
-----------------------------------------------------------------------------
+-- Constants
+local UP_VEC = Vector3.new(0, 1, 0)
+local UNIT_VEC = Vector3.new(1, 1, 1)
+local EMPTY_VEC = Vector3.new(0, 0, 0)
 
 --Player related
-local Camera = Workspace.CurrentCamera
+local Camera = workspace.CurrentCamera
 local Player = Players.LocalPlayer
 local GameSettings = UserSettings().GameSettings
-local CanShow = GameSettings.SavedQualityLevel.Value >= 8
-
---Raycasting
-local ignoreList = { Player.Character or Player.CharacterAdded:Wait() }
-local IgnoreLength = 1
-
---Localizing
-local ipairs = ipairs
-
---Settings localized
-local Rate = Settings.Rate
-local Size = Settings.Size
-local Tint = Settings.Tint or Color3.fromRGB(226, 244, 255)
-local Fade = Settings.Fade
---Fade tween
-local fadeInfo = TweenInfo.new(Fade, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
-local strechInfo = TweenInfo.new(Fade / 1.05, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-local fadeGoal = { Transparency = 1 }
-
-local accumulatedChance = 0
-
-----------------------------------------------------------------------------
----  Prefab Basic Objects  -------------------------------------------------
-----------------------------------------------------------------------------
---Droplet holder
-local ScreenBlock = Instance.new("Part")
-ScreenBlock.Size = Vector3.new(2, 2, 2)
-ScreenBlock.Transparency = 1
-ScreenBlock.Anchored = true
-ScreenBlock.CanCollide = false
-ScreenBlock.Parent = Camera
-
-local ScreenBlockCFrame = EMPTY_CFRAME
-
-RunService:BindToRenderStep("ScreenRainUpdate", Enum.RenderPriority.Camera.Value + 1, function()
-	ScreenBlockCFrame = Camera.CFrame
-	ScreenBlock.CFrame = ScreenBlockCFrame
+local GlassGraphics = GameSettings.SavedQualityLevel.Value >= 8
+GameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(function()
+	GlassGraphics = GameSettings.SavedQualityLevel.Value >= 8 or GameSettings.SavedQualityLevel.Value == 0
 end)
 
-----------------------------------------------------------------------------
----  Functions  ------------------------------------------------------------
-----------------------------------------------------------------------------
+--Settings localized
+local Rate = Settings.Rate or 5
+local Size = Settings.Size or 1.5
+local Tint = Settings.Tint or Color3.fromRGB(226, 244, 255)
+local Fade = Settings.Fade or 1.5
+local UpdateFreq = Settings.UpdateFreq or (1 / 45)
 
-local function DestroyDroplet(d)
-	wait(Fade)
+--Raycasting
+local ignoreList, ignoreLength = {}, 0
 
-	-- Proper GC
-	for _, Child in ipairs(d:GetChildren()) do
-		local Index = table.find(ignoreList, Child)
-		if Index then
-			ignoreList[Index] = ignoreList[IgnoreLength]
-			ignoreList[IgnoreLength] = nil
-			IgnoreLength = IgnoreLength - 1
-		end
+local function addToIgnore(obj: Instance?)
+	if obj then
+		local index = ignoreLength + 1
+		ignoreLength += 1
+		ignoreList[index] = obj
+
+		local connection
+		connection = obj.AncestryChanged:Connect(function()
+			if obj:IsDescendantOf(game) then
+				return
+			end
+			connection:Disconnect()
+
+			-- Perform a fast unordered table removal
+			ignoreList[index] = ignoreList[ignoreLength]
+			ignoreList[ignoreLength] = nil
+			ignoreLength -= 1
+		end)
 	end
+end
 
-	local Index = table.find(ignoreList, d)
-	if Index then
-		ignoreList[Index] = ignoreList[IgnoreLength]
-		ignoreList[IgnoreLength] = nil
-		IgnoreLength = IgnoreLength - 1
+addToIgnore(Player.Character)
+Player.CharacterAdded:Connect(addToIgnore)
+
+--Droplet holder
+local ScreenDroplets = Instance.new("Folder")
+ScreenDroplets.Name = "ScreenDroplets"
+ScreenDroplets.Parent = Camera
+addToIgnore(ScreenDroplets)
+
+local Animations = {}
+local Offsets = {}
+local CameraCF = Camera.CFrame
+
+-- Keep objects in front of camera
+local dropletCount = (Rate * Fade) * 3
+RunService:BindToRenderStep("ScreenRainUpdate", Enum.RenderPriority.Camera.Value + 1, function()
+	CameraCF = Camera.CFrame
+
+	local droplets = table.create(dropletCount)
+	local dropletCF = table.create(dropletCount)
+
+	local i = 0
+	for droplet, offset in pairs(Offsets) do
+		i += 1
+		dropletCF[i] = CameraCF * offset
+		droplets[i] = droplet
 	end
+	dropletCount = i
 
-	d:Destroy()
+	workspace:BulkMoveTo(droplets, dropletCF, Enum.BulkMoveMode.FireCFrameChanged)
+end)
+
+local DropletPool = nil
+do
+	-- Droplet prefab
+	local DropletPrefab = Instance.new("Part")
+	DropletPrefab.Name = "Droplet"
+	DropletPrefab.Material = Enum.Material.Glass
+	DropletPrefab.CastShadow = false
+	DropletPrefab.CanCollide = false
+	DropletPrefab.CanQuery = false
+	DropletPrefab.CanTouch = false
+	DropletPrefab.Anchored = true
+	DropletPrefab.Transparency = 0.5
+	DropletPrefab.Color = Tint
+	DropletPrefab.Size = UNIT_VEC
+
+	local MeshPrefab = Instance.new("SpecialMesh")
+	MeshPrefab.Name = "Mesh"
+	MeshPrefab.MeshType = Enum.MeshType.Sphere
+	MeshPrefab.Parent = DropletPrefab
+
+	DropletPool = ObjectPool.new(DropletPrefab, (Rate * Fade) * 3)
+end
+
+local function Cleanup(obj: Instance)
+	Animations[obj] = nil
+	Offsets[obj] = nil
+	DropletPool:Return(obj)
 end
 
 --Returns whether the given position is under cover
-local function UnderObject(pos, l)
-	l = l or 120
+local function UnderObject(pos, len)
+	len = len or 120
 
-	local hit, position = Workspace:FindPartOnRayWithIgnoreList(Ray.new(pos, UpVec * l), ignoreList)
+	local hit, position = workspace:FindPartOnRayWithIgnoreList(Ray.new(pos, UP_VEC * len), ignoreList)
 	if hit then
-		return hit.Transparency ~= 1 and true or UnderObject(position + UpVec, l - (pos - position).Magnitude)
+		return hit.Transparency ~= 1 and true or UnderObject(position + UP_VEC, len - (pos - position).Magnitude)
 	else
 		return false
 	end
@@ -139,127 +177,94 @@ end
 
 --Creates a random droplet on screen
 local function CreateDroplet()
-	--Setup
-	local stretch = 1 + math.random(15) / 10
+	local Scale = Size + (math.random((Size / 3) * -10, (Size / 3) * 10) / 10)
 
-	local RunAmount = math.random(4)
-	local Tweens = table.create(RunAmount * 2 + 2)
-	local TweensLength = 0
-
-	local SizeOffset = math.random((Size / 3) * -10, (Size / 3) * 10) / 10
-	local Scale = Size + SizeOffset
-	local MeshScale = Vector3.new(Scale, Scale, Scale)
-
-	--Main droplet object
-	local DropletMain = Instance.new("Part")
-	DropletMain.Material = Enum.Material.Glass
-	DropletMain.CFrame = EMPTY_CFRAME
-	DropletMain.CanCollide = false
+	local DropletMain = DropletPool:Get()
+	DropletMain.Mesh.Scale = Vector3.new(Scale, Scale, Scale)
+	DropletMain.Mesh.Offset = EMPTY_VEC
 	DropletMain.Transparency = 0.5
-	DropletMain.Name = "Droplet_Main"
-	DropletMain.Color = Tint
-	DropletMain.Size = DROPLET_SIZE
 
-	local Mesh = Instance.new("SpecialMesh")
-	Mesh.MeshType = Enum.MeshType.Sphere
-	Mesh.Scale = MeshScale
-	Mesh.Parent = DropletMain
+	local DropletOffset = CFrame.new(math.random(-120, 120) / 100, math.random(-100, 100) / 100, -1)
+	Offsets[DropletMain] = DropletOffset
+
+	Animations[DropletMain] = {
+		startClock = os.clock(),
+		scale = Scale,
+		stretch = (math.random(5, 10) / 10) * Scale,
+		mesh = DropletMain.Mesh,
+	}
+
+	DropletMain.Parent = ScreenDroplets
 
 	--Create droplet extrusions
-	for i = 1, RunAmount do
-		local eSizeOffset = math.random((Size / 3) * -100, (Size / 3) * 100) / 100
+	for _ = 1, math.random(4) do
+		local ExtrusionScale = (Scale / 1.5) + (math.random((Scale / 3) * -100, (Scale / 3) * 100) / 100)
 
-		local ExtrusionCFrame = CFrame.new(
-			Vector3.new(math.random(-(Size * 40), Size * 40) / 100, math.random(-(Size * 40), Size * 40) / 100, 0)
-		)
-
-		local ExtrusionScale = Size / 1.5 + eSizeOffset
-		local ExtrusionMeshScale = Vector3.new(ExtrusionScale, ExtrusionScale, ExtrusionScale)
-
-		local Extrusion = Instance.new("Part")
-		Extrusion.Material = Enum.Material.Glass
-		Extrusion.CFrame = ExtrusionCFrame
-		Extrusion.CanCollide = false
+		local Extrusion = DropletPool:Get()
+		Extrusion.Mesh.Scale = Vector3.new(ExtrusionScale, ExtrusionScale, ExtrusionScale)
+		Extrusion.Mesh.Offset = EMPTY_VEC
 		Extrusion.Transparency = 0.5
-		Extrusion.Name = "Extrusion_" .. i
-		Extrusion.Color = Tint
-		Extrusion.Size = DROPLET_SIZE
 
-		local ExtrusionMesh = Instance.new("SpecialMesh")
-		ExtrusionMesh.MeshType = Enum.MeshType.Sphere
-		ExtrusionMesh.Scale = ExtrusionMeshScale
-		ExtrusionMesh.Parent = Extrusion
-		Extrusion.Parent = DropletMain
+		local e2 = ExtrusionScale * 60
+		local ExtrusionOffset = DropletOffset * CFrame.new(math.random(-e2, e2) / 100, math.random(-e2, e2) / 100, 0)
+		Offsets[Extrusion] = ExtrusionOffset
 
-		local weld = Instance.new("Weld")
-		weld.C0 = ExtrusionCFrame:Inverse() * EMPTY_CFRAME
-		weld.Part0 = Extrusion
-		weld.Part1 = DropletMain
-		weld.Parent = Extrusion
+		Animations[Extrusion] = {
+			startClock = os.clock(),
+			scale = ExtrusionScale,
+			stretch = (math.random(5, 10) / 10) * ExtrusionScale,
+			mesh = Extrusion.Mesh,
+		}
 
-		IgnoreLength = IgnoreLength + 1
-		TweensLength = TweensLength + 1
-		ignoreList[IgnoreLength] = Extrusion
-		Tweens[TweensLength] = TweenService:Create(Extrusion, fadeInfo, fadeGoal)
-
-		TweensLength = TweensLength + 1
-		Tweens[TweensLength] = TweenService:Create(ExtrusionMesh, strechInfo, {
-			Scale = Vector3.new(ExtrusionScale, ExtrusionScale * stretch, ExtrusionScale),
-			Offset = Vector3.new(0, -(ExtrusionScale * stretch) / 2.05, 0),
-		})
+		Extrusion.Parent = ScreenDroplets
 	end
-
-	IgnoreLength = IgnoreLength + 1
-	TweensLength = TweensLength + 1
-	ignoreList[IgnoreLength] = DropletMain
-	Tweens[TweensLength] = TweenService:Create(DropletMain, fadeInfo, fadeGoal)
-
-	TweensLength = TweensLength + 1
-	Tweens[TweensLength] = TweenService:Create(Mesh, strechInfo, {
-		Scale = Vector3.new(Scale, Scale * stretch, Scale),
-		Offset = Vector3.new(0, -(Scale * stretch) / 2.05, 0),
-	})
-
-	local NewCFrame = ScreenBlockCFrame:ToWorldSpace(
-		CFrame.new(math.random(-100, 100) / 100, math.random(-100, 100) / 100, -1)
-	)
-
-	DropletMain.CFrame = NewCFrame
-	local weld = Instance.new("Weld")
-	weld.C0 = NewCFrame:Inverse() * ScreenBlockCFrame
-	weld.Part0 = DropletMain
-	weld.Part1 = ScreenBlock
-	weld.Parent = DropletMain
-
-	for _, t in ipairs(Tweens) do
-		t:Play()
-	end
-
-	local DestroyRoutine = coroutine.create(DestroyDroplet)
-	coroutine.resume(DestroyRoutine, DropletMain)
-	DropletMain.Parent = ScreenBlock
 end
 
-local function OnGraphicsChanged()
-	CanShow = GameSettings.SavedQualityLevel.Value >= 8
-end
+-- Droplet spawn/animation loop
+local accumulatedChance = 0
+task.defer(function()
+	local lastCheck = os.clock()
 
-GameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(OnGraphicsChanged)
+	while task.wait(UpdateFreq) do
+		debug.profilebegin("ScreenRainUpdate")
+		local now = os.clock()
 
-----------------------------------------------------------------------------
----  Functionality Loop  ---------------------------------------------------
-----------------------------------------------------------------------------
+		debug.profilebegin("Animations")
+		for Droplet, Data in pairs(Animations) do
+			local startClock = Data.startClock
 
-RunService.Heartbeat:Connect(function(deltaTime)
-	accumulatedChance += deltaTime * Rate
+			local elapsed = now - startClock
+			if elapsed >= Fade then
+				Cleanup(Droplet)
+				continue
+			end
 
-	if CanShow and ScreenBlockCFrame.LookVector.Y > -0.4 and not UnderObject(ScreenBlockCFrame.Position) then
-		for _ = 1, math.floor(accumulatedChance) do
-			CreateDroplet()
+			local mesh, scale, stretch = Data.mesh, Data.scale, Data.stretch
+			local alpha = (elapsed / Fade)
+			local quint = alpha * alpha * alpha * alpha
+			local y = scale + (stretch * quint)
+
+			Droplet.Transparency = 0.5 + (0.5 * alpha)
+			mesh.Scale = Vector3.new(scale, y, scale)
+			mesh.Offset = Vector3.new(0, y / -2, 0)
 		end
+		debug.profileend()
 
-		accumulatedChance %= 1
-	else
-		accumulatedChance %= 1
+		debug.profilebegin("Droplet Creation")
+		if GlassGraphics and CameraCF.LookVector.Y > -0.4 and not UnderObject(CameraCF.Position) then
+			accumulatedChance += (now - lastCheck) * Rate
+
+			for _ = 1, math.floor(accumulatedChance) do
+				CreateDroplet()
+			end
+
+			accumulatedChance %= 1
+		else
+			accumulatedChance %= 1
+		end
+		debug.profileend()
+
+		lastCheck = now
+		debug.profileend()
 	end
 end)
