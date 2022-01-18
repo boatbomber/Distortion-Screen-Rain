@@ -15,13 +15,12 @@ Features:
 
 - **Customization**
 ```Lua
-local Settings	= {
-
+local Settings = {
 	-- How many droplets spawn per second
-	Rate = 8,
+	Rate = 5,
 
 	-- How large the droplets roughly are (in studs)
-	Size = 0.1,
+	Size = 0.08,
 
 	-- What color the droplets are tinted (leave as nil for a default realistic light blue)
 	Tint = Color3.fromRGB(226, 244, 255),
@@ -29,6 +28,8 @@ local Settings	= {
 	-- How long it takes for a droplet to fade
 	Fade = 1.5,
 
+	-- Update frequency
+	UpdateFreq = 1 / 45,
 }
 ```
 - **Droplet Formation**
@@ -49,13 +50,7 @@ If the player looks down, thus shielding his/her eyes from the rain, the droplet
 
 - **Render Settings Compatibility**
 
-Because Glass doesn't render properly on low graphic settings, if the player lowers his/her settings below 8, it stops rendering. This way, you don't have to worry about lower settings failing to run the game properly. They just won't have the extra bonus immersion. :man_shrugging:
-
-
-Performance:
---
-Steady 60FPS, ~0.5% CPU Usage, 30.0/s Rate
-*(Many thanks to @howmanysmaII for optimizations!)*
+Because Glass doesn't render properly on low graphic settings, if the player lowers his/her settings below 8, it stops rendering. This way, you don't have to worry about lower settings failing to run the game properly. They just won't have the extra bonus immersion. :man_shrugging: (This only works if it isn’t set to Automatic, since Roblox still doesn’t have a way to check graphics quality on auto. Auto will always spawn droplets.)
 
 Warning:
 --
