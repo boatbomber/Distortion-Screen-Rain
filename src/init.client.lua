@@ -34,7 +34,7 @@ local Settings = {
 	Rate = 5,
 
 	-- How large the droplets roughly are (in studs)
-	Size = 0.1,
+	Size = 0.08,
 
 	-- What color the droplets are tinted (leave as nil for a default realistic light blue)
 	Tint = Color3.fromRGB(226, 244, 255),
