@@ -1,45 +1,45 @@
 --[=[
-	
+
 	--Copyright boatbomber 2019--
-	
+
 	--Given under a BSD 3-Clause License--
 		Explanation of license:		https://tldrlegal.com/license/bsd-3-clause-license-(revised)
-		
+
 	--FEATURES--
-	
+
 	Creates droplets of "water" on the screen, with a distortion effect, giving great immersion
 	for games that have rainy environments.
-	
+
 	Droplets will not spawn if the player is indoors or under cover of some sort.
 	Droplets will not spawn if the camera is pointed down, as that is avoiding "getting rain in the eyes".
-	
-	
+
+
 	--WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING--
-	
+
 	THIS PRODUCT RELIES ON GLASS MATERIAL, THUS SHARING ALL THE LIMITATIONS OF GLASS.
-	
+
 	Non-opaque objects are currently not visible through glass.
 	This includes, but is not limited to, transparent parts, decals on transparent
 	parts, particles, and world-space gui objects.
 	Additionally, it only looks right for users with graphic settings of at least 8.
 	Hence, I've set it to only spawn droplets if the user has the graphics set high enough.
-	
+
 	--WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING--
 --]=]
 
 -- Constants
 local Settings = {
 	--	Rate: How many droplets spawn per second
-	Rate = 8;
+	Rate = 8,
 
 	--	Size: How large the droplets roughly are (in studs)
-	Size = 0.1;
+	Size = 0.1,
 
 	--	Tint: What color the droplets are tinted (leave as nil for a default realistic light blue)
-	Tint = Color3.fromRGB(226, 244, 255);
+	Tint = Color3.fromRGB(226, 244, 255),
 
 	--	Fade: How long it takes for a droplet to fade
-	Fade = 1.5;
+	Fade = 1.5,
 }
 
 local Workspace = game:GetService("Workspace")
@@ -62,7 +62,7 @@ local GameSettings = UserSettings().GameSettings
 local CanShow = GameSettings.SavedQualityLevel.Value >= 8
 
 --Raycasting
-local ignoreList = {Player.Character or Player.CharacterAdded:Wait()}
+local ignoreList = { Player.Character or Player.CharacterAdded:Wait() }
 local IgnoreLength = 1
 
 --Localizing
@@ -76,7 +76,7 @@ local Fade = Settings.Fade
 --Fade tween
 local fadeInfo = TweenInfo.new(Fade, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
 local strechInfo = TweenInfo.new(Fade / 1.05, Enum.EasingStyle.Quint, Enum.EasingDirection.In)
-local fadeGoal = {Transparency = 1}
+local fadeGoal = { Transparency = 1 }
 
 local accumulatedChance = 0
 
@@ -167,16 +167,11 @@ local function CreateDroplet()
 
 	--Create droplet extrusions
 	for i = 1, RunAmount do
-		local eSizeOffset = math.random(
-			(Size / 3) * -100,
-			(Size / 3) * 100
-		) / 100
+		local eSizeOffset = math.random((Size / 3) * -100, (Size / 3) * 100) / 100
 
-		local ExtrusionCFrame = CFrame.new(Vector3.new(
-			math.random(-(Size * 40), Size * 40) / 100,
-			math.random(-(Size * 40), Size * 40) / 100,
-			0
-			))
+		local ExtrusionCFrame = CFrame.new(
+			Vector3.new(math.random(-(Size * 40), Size * 40) / 100, math.random(-(Size * 40), Size * 40) / 100, 0)
+		)
 
 		local ExtrusionScale = Size / 1.5 + eSizeOffset
 		local ExtrusionMeshScale = Vector3.new(ExtrusionScale, ExtrusionScale, ExtrusionScale)
@@ -209,8 +204,8 @@ local function CreateDroplet()
 
 		TweensLength = TweensLength + 1
 		Tweens[TweensLength] = TweenService:Create(ExtrusionMesh, strechInfo, {
-			Scale = Vector3.new(ExtrusionScale, ExtrusionScale * stretch, ExtrusionScale);
-			Offset = Vector3.new(0, -(ExtrusionScale * stretch) / 2.05, 0);
+			Scale = Vector3.new(ExtrusionScale, ExtrusionScale * stretch, ExtrusionScale),
+			Offset = Vector3.new(0, -(ExtrusionScale * stretch) / 2.05, 0),
 		})
 	end
 
@@ -221,15 +216,13 @@ local function CreateDroplet()
 
 	TweensLength = TweensLength + 1
 	Tweens[TweensLength] = TweenService:Create(Mesh, strechInfo, {
-		Scale = Vector3.new(Scale, Scale * stretch, Scale);
-		Offset = Vector3.new(0, -(Scale * stretch) / 2.05, 0);
+		Scale = Vector3.new(Scale, Scale * stretch, Scale),
+		Offset = Vector3.new(0, -(Scale * stretch) / 2.05, 0),
 	})
 
-	local NewCFrame = ScreenBlockCFrame:ToWorldSpace(CFrame.new(
-		math.random(-100, 100) / 100,
-		math.random(-100, 100) / 100,
-		-1
-		))
+	local NewCFrame = ScreenBlockCFrame:ToWorldSpace(
+		CFrame.new(math.random(-100, 100) / 100, math.random(-100, 100) / 100, -1)
+	)
 
 	DropletMain.CFrame = NewCFrame
 	local weld = Instance.new("Weld")
@@ -258,10 +251,10 @@ GameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(OnGraphicsCha
 ----------------------------------------------------------------------------
 
 RunService.Heartbeat:Connect(function(deltaTime)
-	accumulatedChance += deltaTime * Settings.Rate
+	accumulatedChance += deltaTime * Rate
 
 	if CanShow and ScreenBlockCFrame.LookVector.Y > -0.4 and not UnderObject(ScreenBlockCFrame.Position) then
-		for i = 1, math.floor(accumulatedChance) do
+		for _ = 1, math.floor(accumulatedChance) do
 			CreateDroplet()
 		end
 
