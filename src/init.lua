@@ -13,6 +13,10 @@
 	Droplets will not spawn if the player is indoors or under cover of some sort.
 	Droplets will not spawn if the camera is pointed down, as that is avoiding "getting rain in the eyes".
 
+	--HOW TO USE--
+	In a LocalScript, require this module and call :Enable(). You can optionally pass a settings table in Enable,
+	or you can pass a settings table in a separate call to :Configure().
+	You can also call :Disable() to make it stop spawning droplets.
 
 	--WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING-- --WARNING--
 
