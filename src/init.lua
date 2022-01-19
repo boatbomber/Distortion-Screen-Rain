@@ -71,12 +71,12 @@ GameSettings:GetPropertyChangedSignal("SavedQualityLevel"):Connect(function()
 	GlassGraphics = GameSettings.SavedQualityLevel.Value >= 8 or GameSettings.SavedQualityLevel.Value == 0
 end)
 
---Settings localized
-local Rate = Settings.Rate or 5
-local Size = Settings.Size or 1.5
-local Tint = Settings.Tint or Color3.fromRGB(226, 244, 255)
-local Fade = Settings.Fade or 1.5
-local UpdateFreq = Settings.UpdateFreq or (1 / 45)
+--Settings defaulted
+Settings.Rate = Settings.Rate or 5
+Settings.Size = Settings.Size or 1.5
+Settings.Tint = Settings.Tint or Color3.fromRGB(226, 244, 255)
+Settings.Fade = Settings.Fade or 1.5
+Settings.UpdateFreq = Settings.UpdateFreq or (1 / 45)
 
 --Raycasting
 local ignoreList, ignoreLength = {}, 0
@@ -116,7 +116,7 @@ local Offsets = {}
 local CameraCF = Camera.CFrame
 
 -- Keep objects in front of camera
-local dropletCount = (Rate * Fade) * 3
+local dropletCount = (Settings.Rate * Settings.Fade) * 3
 RunService:BindToRenderStep("ScreenRainUpdate", Enum.RenderPriority.Camera.Value + 1, function()
 	CameraCF = Camera.CFrame
 
@@ -146,7 +146,7 @@ do
 	DropletPrefab.CanTouch = false
 	DropletPrefab.Anchored = true
 	DropletPrefab.Transparency = 0.5
-	DropletPrefab.Color = Tint
+	DropletPrefab.Color = Settings.Tint
 	DropletPrefab.Size = UNIT_VEC
 
 	local MeshPrefab = Instance.new("SpecialMesh")
@@ -154,7 +154,7 @@ do
 	MeshPrefab.MeshType = Enum.MeshType.Sphere
 	MeshPrefab.Parent = DropletPrefab
 
-	DropletPool = ObjectPool.new(DropletPrefab, (Rate * Fade) * 3)
+	DropletPool = ObjectPool.new(DropletPrefab, (Settings.Rate * Settings.Fade) * 3)
 end
 
 local function Cleanup(obj: Instance)
@@ -177,12 +177,13 @@ end
 
 --Creates a random droplet on screen
 local function CreateDroplet()
-	local Scale = Size + (math.random((Size / 3) * -10, (Size / 3) * 10) / 10)
+	local Scale = Settings.Size + (math.random((Settings.Size / 3) * -10, (Settings.Size / 3) * 10) / 10)
 
 	local DropletMain = DropletPool:Get()
 	DropletMain.Mesh.Scale = Vector3.new(Scale, Scale, Scale)
 	DropletMain.Mesh.Offset = EMPTY_VEC
-	DropletMain.Transparency = 0.5
+	DropletMain.Color = Settings.Tint
+	DropletMain.Transparency = 0.7
 
 	local DropletOffset = CFrame.new(math.random(-120, 120) / 100, math.random(-100, 100) / 100, -1)
 	Offsets[DropletMain] = DropletOffset
@@ -203,7 +204,8 @@ local function CreateDroplet()
 		local Extrusion = DropletPool:Get()
 		Extrusion.Mesh.Scale = Vector3.new(ExtrusionScale, ExtrusionScale, ExtrusionScale)
 		Extrusion.Mesh.Offset = EMPTY_VEC
-		Extrusion.Transparency = 0.5
+		Extrusion.Color = Settings.Tint
+		Extrusion.Transparency = 0.7
 
 		local e2 = ExtrusionScale * 60
 		local ExtrusionOffset = DropletOffset * CFrame.new(math.random(-e2, e2) / 100, math.random(-e2, e2) / 100, 0)
@@ -220,51 +222,88 @@ local function CreateDroplet()
 	end
 end
 
--- Droplet spawn/animation loop
-local accumulatedChance = 0
-task.defer(function()
-	local lastCheck = os.clock()
+local ScreenRain = {
+	Enabled = false,
+	_activeUpdater = false,
+}
 
-	while task.wait(UpdateFreq) do
-		debug.profilebegin("ScreenRainUpdate")
-		local now = os.clock()
+function ScreenRain:Enable(settings)
+	self.Enabled = true
+	self:Configure(settings)
 
-		debug.profilebegin("Animations")
-		for Droplet, Data in pairs(Animations) do
-			local startClock = Data.startClock
-
-			local elapsed = now - startClock
-			if elapsed >= Fade then
-				Cleanup(Droplet)
-				continue
-			end
-
-			local mesh, scale, stretch = Data.mesh, Data.scale, Data.stretch
-			local alpha = (elapsed / Fade)
-			local quint = alpha * alpha * alpha * alpha
-			local y = scale + (stretch * quint)
-
-			Droplet.Transparency = 0.5 + (0.5 * alpha)
-			mesh.Scale = Vector3.new(scale, y, scale)
-			mesh.Offset = Vector3.new(0, y / -2, 0)
-		end
-		debug.profileend()
-
-		debug.profilebegin("Droplet Creation")
-		if GlassGraphics and CameraCF.LookVector.Y > -0.4 and not UnderObject(CameraCF.Position) then
-			accumulatedChance += (now - lastCheck) * Rate
-
-			for _ = 1, math.floor(accumulatedChance) do
-				CreateDroplet()
-			end
-
-			accumulatedChance %= 1
-		else
-			accumulatedChance %= 1
-		end
-		debug.profileend()
-
-		lastCheck = now
-		debug.profileend()
+	if self._activeUpdater then
+		return
 	end
-end)
+	self._activeUpdater = true
+
+	-- Droplet spawn/animation loop
+	local accumulatedChance = 0
+	task.defer(function()
+		print("spawned updater")
+		local lastCheck = os.clock()
+
+		while task.wait(Settings.UpdateFreq) do
+			if (not self.Enabled) and (not next(Animations)) then
+				self._activeUpdater = false
+				print("closed updater")
+				break
+			end
+
+			debug.profilebegin("ScreenRainUpdate")
+			local now = os.clock()
+
+			debug.profilebegin("Animations")
+			for Droplet, Data in pairs(Animations) do
+				local startClock = Data.startClock
+
+				local elapsed = now - startClock
+				if elapsed >= Settings.Fade then
+					Cleanup(Droplet)
+					continue
+				end
+
+				local mesh, scale, stretch = Data.mesh, Data.scale, Data.stretch
+				local alpha = (elapsed / Settings.Fade)
+				local quint = alpha * alpha * alpha * alpha
+				local y = scale + (stretch * quint)
+
+				Droplet.Transparency = 0.7 + (0.3 * (alpha*alpha))
+				mesh.Scale = Vector3.new(scale, y, scale)
+				mesh.Offset = Vector3.new(0, y / -2, 0)
+			end
+			debug.profileend()
+
+			debug.profilebegin("Droplet Creation")
+			if self.Enabled and GlassGraphics and CameraCF.LookVector.Y > -0.4 and not UnderObject(CameraCF.Position) then
+				accumulatedChance += (now - lastCheck) * Settings.Rate
+
+				for _ = 1, math.floor(accumulatedChance) do
+					CreateDroplet()
+				end
+
+				accumulatedChance %= 1
+			else
+				accumulatedChance %= 1
+			end
+			debug.profileend()
+
+			lastCheck = now
+			debug.profileend()
+		end
+	end)
+end
+
+function ScreenRain:Disable()
+	self.Enabled = false
+end
+
+function ScreenRain:Configure(settings)
+	if type(settings) == "table" then
+		for k, v in pairs(settings) do
+			print(k, v)
+			Settings[k] = v
+		end
+	end
+end
+
+return ScreenRain
