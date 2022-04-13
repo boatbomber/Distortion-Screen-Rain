@@ -1,0 +1,15 @@
+{
+    "name": "@boatbomber/distortion-screen-rain",
+    "version": "1.0.0",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/boatbomber/Distortion-Screen-Rain.git"
+    },
+    "contributors": [
+        "boatbomber"
+    ],
+    "bugs": {
+        "url": "https://github.com/boatbomber/Distortion-Screen-Rain/issues"
+    }
+}
