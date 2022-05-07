@@ -243,13 +243,11 @@ function ScreenRain:Enable(settings)
 	-- Droplet spawn/animation loop
 	local accumulatedChance = 0
 	task.defer(function()
-		print("spawned updater")
 		local lastCheck = os.clock()
 
 		while task.wait(Settings.UpdateFreq) do
 			if (not self.Enabled) and (not next(Animations)) then
 				self._activeUpdater = false
-				print("closed updater")
 				break
 			end
 
@@ -304,7 +302,6 @@ end
 function ScreenRain:Configure(settings)
 	if type(settings) == "table" then
 		for k, v in pairs(settings) do
-			print(k, v)
 			Settings[k] = v
 		end
 	end
